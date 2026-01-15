@@ -111,6 +111,9 @@ export function CalendarPage({ dailyStats, trades }: CalendarPageProps) {
             const isToday = isSameDay(day, new Date());
             const isSelected = selectedDate && isSameDay(day, selectedDate);
 
+            const hasProfit = stats && stats.netPnl > 0;
+            const hasLoss = stats && stats.netPnl < 0;
+
             return (
               <button
                 key={index}
@@ -118,8 +121,10 @@ export function CalendarPage({ dailyStats, trades }: CalendarPageProps) {
                 className={cn(
                   'aspect-square p-2 rounded-lg text-left transition-all flex flex-col',
                   isCurrentMonth ? 'bg-secondary/30 hover:bg-secondary/60' : 'opacity-30',
+                  isCurrentMonth && hasProfit && 'bg-profit/20 hover:bg-profit/30 border border-profit/30',
+                  isCurrentMonth && hasLoss && 'bg-loss/20 hover:bg-loss/30 border border-loss/30',
                   isToday && 'ring-1 ring-accent',
-                  isSelected && 'ring-2 ring-primary bg-primary/10'
+                  isSelected && 'ring-2 ring-primary'
                 )}
               >
                 <span className={cn('text-sm font-medium', isCurrentMonth ? 'text-foreground' : 'text-muted-foreground')}>
