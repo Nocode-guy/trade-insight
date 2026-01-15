@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
+  Zap,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -21,11 +23,13 @@ interface SidebarProps {
 }
 
 const navItems = [
+  { path: '/gex', icon: Zap, label: 'GEX Dashboard' },
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/calendar', icon: Calendar, label: 'Calendar' },
   { path: '/reports', icon: BarChart3, label: 'Reports' },
   { path: '/trades', icon: LineChart, label: 'Trades' },
   { path: '/journal', icon: BookOpen, label: 'Journal' },
+  { path: '/account', icon: User, label: 'Account' },
 ];
 
 export function Sidebar({ onImportClick, onNewTradeClick }: SidebarProps) {

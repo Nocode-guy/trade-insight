@@ -9,6 +9,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
+interface FileData {
+  name: string;
+  content: string;
+}
+
 interface ImportModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -17,8 +22,7 @@ interface ImportModalProps {
 
 export function ImportModal({ open, onOpenChange, onImport }: ImportModalProps) {
   const [dragActive, setDragActive] = useState(false);
-  const [csvText, setCsvText] = useState('');
-  const [fileName, setFileName] = useState('');
+  const [files, setFiles] = useState<FileData[]>([]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -30,46 +34,62 @@ export function ImportModal({ open, onOpenChange, onImport }: ImportModalProps) 
     }
   }, []);
 
+  const processFiles = useCallback((fileList: FileList) => {
+    const csvFiles = Array.from(fileList).filter(
+      file => file.type === 'text/csv' || file.name.endsWith('.csv')
+    );
+
+    csvFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setFiles(prev => {
+          // Don't add duplicate files
+          if (prev.some(f => f.name === file.name)) return prev;
+          return [...prev, { name: file.name, content: e.target?.result as string }];
+        });
+      };
+      reader.readAsText(file);
+    });
+  }, []);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
 
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type === 'text/csv') {
-      processFile(file);
+    if (e.dataTransfer.files?.length) {
+      processFiles(e.dataTransfer.files);
     }
-  }, []);
+  }, [processFiles]);
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processFile(file);
+    if (e.target.files?.length) {
+      processFiles(e.target.files);
     }
-  }, []);
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  }, [processFiles]);
 
-  const processFile = (file: File) => {
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setCsvText(e.target?.result as string);
-    };
-    reader.readAsText(file);
+  const removeFile = (fileName: string) => {
+    setFiles(prev => prev.filter(f => f.name !== fileName));
   };
 
   const handleImport = () => {
-    if (!csvText) return;
-    
-    const count = onImport(csvText);
-    toast.success(`Successfully imported ${count} trades`);
-    setCsvText('');
-    setFileName('');
+    if (files.length === 0) return;
+
+    let totalCount = 0;
+    files.forEach(file => {
+      const count = onImport(file.content);
+      totalCount += count;
+    });
+
+    toast.success(`Successfully imported ${totalCount} trades from ${files.length} file${files.length > 1 ? 's' : ''}`);
+    setFiles([]);
     onOpenChange(false);
   };
 
   const handleClose = () => {
-    setCsvText('');
-    setFileName('');
+    setFiles([]);
     onOpenChange(false);
   };
 
@@ -90,54 +110,57 @@ export function ImportModal({ open, onOpenChange, onImport }: ImportModalProps) 
             className={`
               relative border-2 border-dashed rounded-xl p-8 text-center transition-colors
               ${dragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground'}
-              ${fileName ? 'border-primary bg-primary/5' : ''}
             `}
           >
             <input
               type="file"
               accept=".csv"
+              multiple
               onChange={handleFileInput}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
-            
-            {fileName ? (
-              <div className="flex items-center justify-center gap-3">
-                <FileText className="w-8 h-8 text-primary" />
-                <div className="text-left">
-                  <p className="font-medium text-foreground">{fileName}</p>
-                  <p className="text-sm text-muted-foreground">Ready to import</p>
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCsvText('');
-                    setFileName('');
-                  }}
-                  className="ml-2"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            ) : (
-              <>
-                <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                <p className="text-foreground font-medium">
-                  Drop your CSV file here
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  or click to browse
-                </p>
-              </>
-            )}
+
+            <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+            <p className="text-foreground font-medium">
+              Drop your CSV files here
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              or click to browse (select multiple)
+            </p>
           </div>
+
+          {/* Selected files list */}
+          {files.length > 0 && (
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {files.map((file) => (
+                <div
+                  key={file.name}
+                  className="flex items-center justify-between bg-secondary/50 rounded-lg px-3 py-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span className="text-sm text-foreground truncate max-w-[280px]">
+                      {file.name}
+                    </span>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => removeFile(file.name)}
+                    className="h-6 w-6"
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* CSV Format info */}
           <div className="bg-secondary/50 rounded-lg p-4">
-            <p className="text-sm font-medium text-foreground mb-2">Expected CSV columns:</p>
-            <p className="text-xs text-muted-foreground font-mono">
-              date_open, time_open, date_close, time_close, symbol, side, qty, entry_price, exit_price, fees, strategy_tag, notes
+            <p className="text-sm font-medium text-foreground mb-2">Supported formats:</p>
+            <p className="text-xs text-muted-foreground">
+              Robinhood exports, or custom CSV with columns: date_open, date_close, symbol, side, qty, entry_price, exit_price
             </p>
           </div>
 
@@ -148,11 +171,11 @@ export function ImportModal({ open, onOpenChange, onImport }: ImportModalProps) 
             </Button>
             <Button
               onClick={handleImport}
-              disabled={!csvText}
+              disabled={files.length === 0}
               className="flex-1 gap-2"
             >
               <Check className="w-4 h-4" />
-              Import Trades
+              Import {files.length > 0 ? `${files.length} File${files.length > 1 ? 's' : ''}` : 'Trades'}
             </Button>
           </div>
         </div>

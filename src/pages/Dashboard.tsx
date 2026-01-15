@@ -17,6 +17,11 @@ import { TickerTable } from '@/components/dashboard/TickerTable';
 import { DateRangePicker } from '@/components/dashboard/DateRangePicker';
 import { EquityCurve } from '@/components/dashboard/EquityCurve';
 import { Trade, DailyStats, TickerStats, OverallStats, DateRange } from '@/types/trade';
+
+interface CustomDateRange {
+  start: Date;
+  end: Date;
+}
 import { formatCurrency, formatPercent, formatHoldTime } from '@/lib/tradeUtils';
 
 interface DashboardProps {
@@ -26,6 +31,8 @@ interface DashboardProps {
   overallStats: OverallStats;
   dateRange: DateRange;
   setDateRange: (range: DateRange) => void;
+  customDateRange?: CustomDateRange | null;
+  setCustomDateRange?: (range: CustomDateRange) => void;
 }
 
 export function Dashboard({
@@ -35,6 +42,8 @@ export function Dashboard({
   overallStats,
   dateRange,
   setDateRange,
+  customDateRange,
+  setCustomDateRange,
 }: DashboardProps) {
   const wins = trades.filter(t => t.outcome === 'WIN').length;
   const losses = trades.filter(t => t.outcome === 'LOSS').length;
@@ -44,7 +53,12 @@ export function Dashboard({
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-        <DateRangePicker value={dateRange} onChange={setDateRange} />
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          customDateRange={customDateRange}
+          onCustomDateChange={setCustomDateRange}
+        />
       </div>
 
       {/* Calendar strip */}

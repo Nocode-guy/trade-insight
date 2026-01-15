@@ -152,42 +152,46 @@ export function CalendarPage({ dailyStats, trades }: CalendarPageProps) {
       </div>
 
       {/* Selected day trades */}
-      {selectedDate && selectedDayTrades.length > 0 && (
+      {selectedDate && (
         <div className="bg-card rounded-xl border border-border/50 p-6">
           <h3 className="text-lg font-semibold mb-4">
             Trades on {format(selectedDate, 'MMMM d, yyyy')}
           </h3>
-          <div className="space-y-3">
-            {selectedDayTrades.map((trade) => (
-              <div
-                key={trade.id}
-                className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg"
-              >
-                <div className="flex items-center gap-4">
-                  <span className="font-semibold text-foreground">{trade.symbol}</span>
+          {selectedDayTrades.length > 0 ? (
+            <div className="space-y-3">
+              {selectedDayTrades.map((trade) => (
+                <div
+                  key={trade.id}
+                  className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg"
+                >
+                  <div className="flex items-center gap-4">
+                    <span className="font-semibold text-foreground">{trade.symbol}</span>
+                    <span
+                      className={cn(
+                        'px-2 py-0.5 rounded text-xs font-medium',
+                        trade.side === 'LONG' ? 'bg-profit/10 text-profit' : 'bg-loss/10 text-loss'
+                      )}
+                    >
+                      {trade.side}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {trade.timeOpen?.slice(0, 5)} - {trade.timeClose?.slice(0, 5)}
+                    </span>
+                  </div>
                   <span
                     className={cn(
-                      'px-2 py-0.5 rounded text-xs font-medium',
-                      trade.side === 'LONG' ? 'bg-profit/10 text-profit' : 'bg-loss/10 text-loss'
+                      'font-semibold',
+                      trade.netPnl >= 0 ? 'text-profit' : 'text-loss'
                     )}
                   >
-                    {trade.side}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {trade.timeOpen?.slice(0, 5)} - {trade.timeClose?.slice(0, 5)}
+                    {formatCurrency(trade.netPnl)}
                   </span>
                 </div>
-                <span
-                  className={cn(
-                    'font-semibold',
-                    trade.netPnl >= 0 ? 'text-profit' : 'text-loss'
-                  )}
-                >
-                  {formatCurrency(trade.netPnl)}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-center py-4">No trades on this day</p>
+          )}
         </div>
       )}
     </div>

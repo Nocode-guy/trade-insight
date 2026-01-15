@@ -180,34 +180,239 @@ export function formatHoldTime(minutes: number): string {
   return `${(minutes / 1440).toFixed(1)}d`;
 }
 
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseRobinhoodAmount(amount: string): number {
+  if (!amount) return 0;
+  const cleaned = amount.replace(/[$,]/g, '').replace(/[()]/g, m => m === '(' ? '-' : '');
+  return parseFloat(cleaned) || 0;
+}
+
+function parseRobinhoodDate(dateStr: string): Date {
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    const [month, day, year] = parts;
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  }
+  return new Date(dateStr);
+}
+
 export function parseCSV(csvText: string): Omit<Trade, 'id' | 'grossPnl' | 'netPnl' | 'pnlPercent' | 'holdTime' | 'outcome'>[] {
-  const lines = csvText.trim().split('\n');
+  const lines = csvText.trim().split('\n').filter(line => line.trim() !== '');
   if (lines.length < 2) return [];
-  
-  const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
-  
-  return lines.slice(1).map(line => {
-    const values = line.split(',').map(v => v.trim());
+
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/"/g, ''));
+
+  // Detect Robinhood format
+  const isRobinhood = headers.includes('activity date') && headers.includes('trans code');
+
+  if (isRobinhood) {
+    return parseRobinhoodCSV(lines, headers);
+  }
+
+  return lines.slice(1)
+    .filter(line => line.trim() !== '')
+    .map(line => {
+      const values = parseCSVLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = values[i] || '';
+      });
+
+      // Get date values with fallbacks
+      const dateOpenStr = row.date_open || row.dateopen || row['date open'] || '';
+      const dateCloseStr = row.date_close || row.dateclose || row['date close'] || '';
+
+      // Skip rows without required date fields
+      if (!dateOpenStr || !dateCloseStr) {
+        return null;
+      }
+
+      return {
+        dateOpen: parseISO(dateOpenStr),
+        timeOpen: row.time_open || row.timeopen || row['time open'] || undefined,
+        dateClose: parseISO(dateCloseStr),
+        timeClose: row.time_close || row.timeclose || row['time close'] || undefined,
+        symbol: (row.symbol || row.ticker || '').toUpperCase(),
+        side: (row.side || 'LONG').toUpperCase() as 'LONG' | 'SHORT',
+        qty: parseFloat(row.qty || row.quantity || '0'),
+        entryPrice: parseFloat(row.entry_price || row.entryprice || row.entry || '0'),
+        exitPrice: parseFloat(row.exit_price || row.exitprice || row.exit || '0'),
+        fees: parseFloat(row.fees || row.commission || '0'),
+        strategyTag: row.strategy_tag || row.strategy || row.tag || undefined,
+        notes: row.notes || undefined,
+      };
+    })
+    .filter((trade): trade is NonNullable<typeof trade> => trade !== null);
+}
+
+function parseRobinhoodCSV(lines: string[], headers: string[]): Omit<Trade, 'id' | 'grossPnl' | 'netPnl' | 'pnlPercent' | 'holdTime' | 'outcome'>[] {
+  const trades: Omit<Trade, 'id' | 'grossPnl' | 'netPnl' | 'pnlPercent' | 'holdTime' | 'outcome'>[] = [];
+
+  // Group transactions by description (option contract)
+  const transactionsByContract = new Map<string, Array<{
+    date: Date;
+    transCode: string;
+    quantity: number;
+    price: number;
+    amount: number;
+    symbol: string;
+    description: string;
+  }>>();
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values.length < headers.length) continue;
+
     const row: Record<string, string> = {};
-    headers.forEach((h, i) => {
-      row[h] = values[i] || '';
+    headers.forEach((h, idx) => {
+      row[h] = values[idx] || '';
     });
-    
-    return {
-      dateOpen: parseISO(row.date_open || row.dateopen),
-      timeOpen: row.time_open || row.timeopen || undefined,
-      dateClose: parseISO(row.date_close || row.dateclose),
-      timeClose: row.time_close || row.timeclose || undefined,
-      symbol: (row.symbol || row.ticker || '').toUpperCase(),
-      side: (row.side || 'LONG').toUpperCase() as 'LONG' | 'SHORT',
-      qty: parseFloat(row.qty || row.quantity || '0'),
-      entryPrice: parseFloat(row.entry_price || row.entryprice || row.entry || '0'),
-      exitPrice: parseFloat(row.exit_price || row.exitprice || row.exit || '0'),
-      fees: parseFloat(row.fees || row.commission || '0'),
-      strategyTag: row.strategy_tag || row.strategy || row.tag || undefined,
-      notes: row.notes || undefined,
+
+    const transCode = row['trans code'];
+    const description = row['description'];
+    const instrument = row['instrument'];
+
+    // Process BTO/STC (long options) and STO/BTC (short options)
+    if (!['BTO', 'STC', 'STO', 'BTC'].includes(transCode)) continue;
+    if (!instrument || !description) continue;
+
+    const dateStr = row['activity date'];
+    if (!dateStr) continue;
+
+    const transaction = {
+      date: parseRobinhoodDate(dateStr),
+      transCode,
+      quantity: parseInt(row['quantity']) || 1,
+      price: parseRobinhoodAmount(row['price']),
+      amount: parseRobinhoodAmount(row['amount']),
+      symbol: instrument,
+      description,
     };
+
+    const key = description;
+    if (!transactionsByContract.has(key)) {
+      transactionsByContract.set(key, []);
+    }
+    transactionsByContract.get(key)!.push(transaction);
+  }
+
+  // Match opening with closing transactions
+  transactionsByContract.forEach((transactions, contract) => {
+    // BTO/STC = long options, STO/BTC = short options
+    const longOpens = transactions.filter(t => t.transCode === 'BTO').sort((a, b) => a.date.getTime() - b.date.getTime());
+    const longCloses = transactions.filter(t => t.transCode === 'STC').sort((a, b) => a.date.getTime() - b.date.getTime());
+    const shortOpens = transactions.filter(t => t.transCode === 'STO').sort((a, b) => a.date.getTime() - b.date.getTime());
+    const shortCloses = transactions.filter(t => t.transCode === 'BTC').sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    // Process long options (BTO -> STC)
+    let openIdx = 0;
+    let openQtyRemaining = longOpens[openIdx]?.quantity || 0;
+    let openAmountPerUnit = longOpens[openIdx] ? Math.abs(longOpens[openIdx].amount) / longOpens[openIdx].quantity : 0;
+
+    for (const close of longCloses) {
+      let closeQtyRemaining = close.quantity;
+      const closeAmountPerUnit = close.amount / close.quantity;
+
+      while (closeQtyRemaining > 0 && openIdx < longOpens.length) {
+        const open = longOpens[openIdx];
+        const matchQty = Math.min(closeQtyRemaining, openQtyRemaining);
+
+        if (matchQty > 0) {
+          const isPut = contract.toLowerCase().includes('put');
+          // Use amounts for accurate P&L (already includes fees)
+          // entryPrice = cost per unit, exitPrice = proceeds per unit
+          trades.push({
+            dateOpen: open.date,
+            timeOpen: undefined,
+            dateClose: close.date,
+            timeClose: undefined,
+            symbol: close.symbol,
+            side: 'LONG',
+            qty: matchQty,
+            entryPrice: openAmountPerUnit,
+            exitPrice: closeAmountPerUnit,
+            fees: 0, // Already included in amounts
+            strategyTag: isPut ? 'put' : 'call',
+            notes: contract,
+          });
+        }
+
+        closeQtyRemaining -= matchQty;
+        openQtyRemaining -= matchQty;
+
+        if (openQtyRemaining <= 0) {
+          openIdx++;
+          openQtyRemaining = longOpens[openIdx]?.quantity || 0;
+          openAmountPerUnit = longOpens[openIdx] ? Math.abs(longOpens[openIdx].amount) / longOpens[openIdx].quantity : 0;
+        }
+      }
+    }
+
+    // Process short options (STO -> BTC)
+    openIdx = 0;
+    openQtyRemaining = shortOpens[openIdx]?.quantity || 0;
+    let shortOpenAmountPerUnit = shortOpens[openIdx] ? shortOpens[openIdx].amount / shortOpens[openIdx].quantity : 0;
+
+    for (const close of shortCloses) {
+      let closeQtyRemaining = close.quantity;
+      const closeAmountPerUnit = Math.abs(close.amount) / close.quantity;
+
+      while (closeQtyRemaining > 0 && openIdx < shortOpens.length) {
+        const open = shortOpens[openIdx];
+        const matchQty = Math.min(closeQtyRemaining, openQtyRemaining);
+
+        if (matchQty > 0) {
+          const isPut = contract.toLowerCase().includes('put');
+          // For shorts: STO gives credit (positive), BTC costs money (negative)
+          // P&L = credit received - cost to close
+          trades.push({
+            dateOpen: open.date,
+            timeOpen: undefined,
+            dateClose: close.date,
+            timeClose: undefined,
+            symbol: close.symbol,
+            side: 'SHORT',
+            qty: matchQty,
+            entryPrice: closeAmountPerUnit, // Cost to close
+            exitPrice: shortOpenAmountPerUnit, // Credit received
+            fees: 0,
+            strategyTag: isPut ? 'put' : 'call',
+            notes: contract,
+          });
+        }
+
+        closeQtyRemaining -= matchQty;
+        openQtyRemaining -= matchQty;
+
+        if (openQtyRemaining <= 0) {
+          openIdx++;
+          openQtyRemaining = shortOpens[openIdx]?.quantity || 0;
+          shortOpenAmountPerUnit = shortOpens[openIdx] ? shortOpens[openIdx].amount / shortOpens[openIdx].quantity : 0;
+        }
+      }
+    }
   });
+
+  return trades.sort((a, b) => b.dateClose.getTime() - a.dateClose.getTime());
 }
 
 export function generateId(): string {

@@ -5,6 +5,8 @@ import { TradesPage } from '@/pages/Trades';
 import { CalendarPage } from '@/pages/CalendarPage';
 import { ReportsPage } from '@/pages/Reports';
 import { JournalPage } from '@/pages/Journal';
+import { GexDashboardPage } from '@/pages/GexDashboard';
+import { AccountPage } from '@/pages/Account';
 import { useTrades } from '@/hooks/useTrades';
 
 const Index = () => {
@@ -15,6 +17,8 @@ const Index = () => {
     overallStats,
     dateRange,
     setDateRange,
+    customDateRange,
+    setCustomDateRange,
     addTrade,
     importTrades,
     deleteTrade,
@@ -33,6 +37,8 @@ const Index = () => {
               overallStats={overallStats}
               dateRange={dateRange}
               setDateRange={setDateRange}
+              customDateRange={customDateRange}
+              setCustomDateRange={setCustomDateRange}
             />
           }
         />
@@ -40,6 +46,8 @@ const Index = () => {
         <Route path="/reports" element={<ReportsPage trades={trades} />} />
         <Route path="/trades" element={<TradesPage trades={trades} onDelete={deleteTrade} />} />
         <Route path="/journal" element={<JournalPage trades={trades} />} />
+        <Route path="/gex" element={<GexDashboardPage />} />
+        <Route path="/account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>
